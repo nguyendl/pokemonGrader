@@ -381,8 +381,11 @@
   // ---- auto-detect via pixel gradients ----
   function autoDetect(){
     const canvas = document.createElement('canvas');
-    const w = 300; // downscale for speed
-    const h = Math.round(300 * (img.naturalHeight/img.naturalWidth));
+    const targetLong = 500; // more resolution than before, affordable since we average over bands
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+    const scale = targetLong / Math.max(iw, ih);
+    const w = Math.max(20, Math.round(iw*scale));
+    const h = Math.max(20, Math.round(ih*scale));
     canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(img, 0, 0, w, h);
@@ -391,56 +394,83 @@
       data = ctx.getImageData(0,0,w,h).data;
     }catch(e){
       applyPositions();
-      return; // e.g. tainted canvas from cross-origin - fall back to defaults
+      return; // e.g. tainted canvas - fall back to defaults
     }
 
-    function lum(x,y){
-      const i = (y*w+x)*4;
-      return 0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2];
-    }
-
-    function gradientAlongRow(y, xStart, xEnd){
-      const arr = [];
-      const step = xStart < xEnd ? 1 : -1;
-      for(let x=xStart; x!==xEnd; x+=step){
-        arr.push({x, g: Math.abs(lum(Math.min(x+2,w-1),y) - lum(Math.max(x-2,0),y))});
+    // precompute luminance grid once
+    const L = new Float32Array(w*h);
+    for(let y=0; y<h; y++){
+      for(let x=0; x<w; x++){
+        const i = (y*w+x)*4;
+        L[y*w+x] = 0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2];
       }
-      return arr;
     }
-    function gradientAlongCol(x, yStart, yEnd){
-      const arr = [];
-      const step = yStart < yEnd ? 1 : -1;
-      for(let y=yStart; y!==yEnd; y+=step){
-        arr.push({y, g: Math.abs(lum(x,Math.min(y+2,h-1)) - lum(x,Math.max(y-2,0)))});
+    const lget = (x,y) => L[y*w+x];
+
+    // column edge-strength profile: gradient at each x, averaged over a band of rows around vertical center
+    function columnProfile(bandFrac){
+      const bandH = Math.max(6, Math.round(h*bandFrac));
+      const yStart = Math.max(2, Math.round(h/2 - bandH/2));
+      const yEnd = Math.min(h-3, Math.round(h/2 + bandH/2));
+      const profile = new Float32Array(w);
+      for(let x=2; x<w-2; x++){
+        let sum = 0, n = 0;
+        for(let y=yStart; y<=yEnd; y++){
+          sum += Math.abs(lget(x+2,y) - lget(x-2,y));
+          n++;
+        }
+        profile[x] = n ? sum/n : 0;
       }
-      return arr;
+      return profile;
     }
-    function strongestIn(arr, key){
-      let best = arr[0];
-      for(const p of arr) if(p.g > best.g) best = p;
-      return best[key];
+    // row edge-strength profile: gradient at each y, averaged over a band of columns around horizontal center
+    function rowProfile(bandFrac){
+      const bandW = Math.max(6, Math.round(w*bandFrac));
+      const xStart = Math.max(2, Math.round(w/2 - bandW/2));
+      const xEnd = Math.min(w-3, Math.round(w/2 + bandW/2));
+      const profile = new Float32Array(h);
+      for(let y=2; y<h-2; y++){
+        let sum = 0, n = 0;
+        for(let x=xStart; x<=xEnd; x++){
+          sum += Math.abs(lget(x,y+2) - lget(x,y-2));
+          n++;
+        }
+        profile[y] = n ? sum/n : 0;
+      }
+      return profile;
     }
 
-    const midY = Math.round(h/2);
-    const midX = Math.round(w/2);
+    function peakIndex(profile, start, end){
+      const step = start < end ? 1 : -1;
+      let bestI = start, bestV = -1;
+      for(let i=start; i!==end; i+=step){
+        if(profile[i] > bestV){ bestV = profile[i]; bestI = i; }
+      }
+      return bestI;
+    }
 
-    // outer edges: search from each side inward across ~first 12% of dimension
-    const searchXOuter = Math.round(w*0.12);
-    const searchYOuter = Math.round(h*0.12);
-    const outerLeftPx = strongestIn(gradientAlongRow(midY, 0, searchXOuter), 'x');
-    const outerRightPx = strongestIn(gradientAlongRow(midY, w-1, w-1-searchXOuter), 'x');
-    const outerTopPx = strongestIn(gradientAlongCol(midX, 0, searchYOuter), 'y');
-    const outerBottomPx = strongestIn(gradientAlongCol(midX, h-1, h-1-searchYOuter), 'y');
+    const colProfile = columnProfile(0.5); // average over middle 50% of rows
+    const rowProfileArr = rowProfile(0.5); // average over middle 50% of columns
+    const midW = Math.round(w/2), midH = Math.round(h/2);
 
-    // inner border: search inward from outer edge across next ~4-14% of dimension
-    const innerSearchStartX = Math.round(w*0.04);
-    const innerSearchEndX = Math.round(w*0.16);
-    const innerSearchStartY = Math.round(h*0.04);
-    const innerSearchEndY = Math.round(h*0.16);
-    const innerLeftPx = strongestIn(gradientAlongRow(midY, outerLeftPx+innerSearchStartX, outerLeftPx+innerSearchEndX), 'x');
-    const innerRightPx = strongestIn(gradientAlongRow(midY, outerRightPx-innerSearchStartX, outerRightPx-innerSearchEndX), 'x');
-    const innerTopPx = strongestIn(gradientAlongCol(midX, outerTopPx+innerSearchStartY, outerTopPx+innerSearchEndY), 'y');
-    const innerBottomPx = strongestIn(gradientAlongCol(midX, outerBottomPx-innerSearchStartY, outerBottomPx-innerSearchEndY), 'y');
+    // outer edges: search the FULL left/right (top/bottom) half, not a small fixed window
+    const outerLeftPx = peakIndex(colProfile, 2, midW);
+    const outerRightPx = peakIndex(colProfile, w-3, midW);
+    const outerTopPx = peakIndex(rowProfileArr, 2, midH);
+    const outerBottomPx = peakIndex(rowProfileArr, h-3, midH);
+
+    // inner border: search inward from the detected outer edges, scaled to the detected card size
+    const boxW = Math.max(6, outerRightPx - outerLeftPx);
+    const boxH = Math.max(6, outerBottomPx - outerTopPx);
+    const xStartOff = Math.max(1, Math.round(boxW*0.02));
+    const xEndOff = Math.max(xStartOff+2, Math.round(boxW*0.16));
+    const yStartOff = Math.max(1, Math.round(boxH*0.02));
+    const yEndOff = Math.max(yStartOff+2, Math.round(boxH*0.16));
+
+    const innerLeftPx = peakIndex(colProfile, outerLeftPx+xStartOff, outerLeftPx+xEndOff);
+    const innerRightPx = peakIndex(colProfile, outerRightPx-xStartOff, outerRightPx-xEndOff);
+    const innerTopPx = peakIndex(rowProfileArr, outerTopPx+yStartOff, outerTopPx+yEndOff);
+    const innerBottomPx = peakIndex(rowProfileArr, outerBottomPx-yStartOff, outerBottomPx-yEndOff);
 
     pos.outerLeft = outerLeftPx/w*100;
     pos.outerRight = outerRightPx/w*100;
