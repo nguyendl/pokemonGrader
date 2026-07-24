@@ -237,7 +237,7 @@
     const rawUrl = URL.createObjectURL(file);
     const probe = new Image();
     probe.onload = function(){
-      const maxDim = 1400;
+      const maxDim = 2200;
       const w = probe.naturalWidth, h = probe.naturalHeight;
       const scale = Math.min(1, maxDim / Math.max(w, h));
       const cw = Math.max(1, Math.round(w * scale));
@@ -284,6 +284,7 @@
   }
 
   let imageCaptureObj = null;
+  let maxPhotoSettings = null;
 
   async function openCamera(){
     cameraError.style.display = 'none';
@@ -296,12 +297,21 @@
     overlay.style.display = 'block';
     try{
       activeStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } },
         audio: false
       });
       liveVideo.srcObject = activeStream;
       const track = activeStream.getVideoTracks()[0];
       imageCaptureObj = (typeof ImageCapture !== 'undefined' && track) ? new ImageCapture(track) : null;
+      maxPhotoSettings = null;
+      if(imageCaptureObj){
+        try{
+          const caps = await imageCaptureObj.getPhotoCapabilities();
+          if(caps && caps.imageWidth && caps.imageHeight){
+            maxPhotoSettings = { imageWidth: caps.imageWidth.max, imageHeight: caps.imageHeight.max };
+          }
+        }catch(e){ maxPhotoSettings = null; } // some devices don't support this - fine, takePhoto still works without it
+      }
     }catch(e){
       cameraError.textContent = "Couldn't access the camera (permission denied or unavailable). Use \"Choose Photo\" instead, or check the site's camera permission in Chrome.";
       cameraError.style.display = 'block';
@@ -311,6 +321,7 @@
   function closeCamera(){
     stopStream();
     imageCaptureObj = null;
+    maxPhotoSettings = null;
     overlay.style.display = 'none';
   }
 
@@ -321,7 +332,7 @@
     // prefer a real full-resolution still photo over a video-frame grab
     if(imageCaptureObj){
       try{
-        const blob = await imageCaptureObj.takePhoto();
+        const blob = await imageCaptureObj.takePhoto(maxPhotoSettings || undefined);
         closeCamera();
         loadImage(blob);
         return;
@@ -337,7 +348,7 @@
     closeCamera();
     canvas.toBlob(function(blob){
       if(blob) loadImage(blob);
-    }, 'image/jpeg', 0.92);
+    }, 'image/jpeg', 0.95);
   });
 
   document.querySelector('label[for="galleryInput"]').addEventListener('click', function(e){
@@ -527,10 +538,13 @@
   const aiIdBtn = document.getElementById('aiIdBtn');
   const aiIdStatus = document.getElementById('aiIdStatus');
 
+  const DEFAULT_WORKER_URL = 'https://card-identify.danielngn806.workers.dev';
   try{
     const savedUrl = localStorage.getItem('cardWorkerUrl');
-    if(savedUrl) workerUrlInput.value = savedUrl;
-  }catch(e){}
+    workerUrlInput.value = savedUrl || DEFAULT_WORKER_URL;
+  }catch(e){
+    workerUrlInput.value = DEFAULT_WORKER_URL;
+  }
   workerUrlInput.addEventListener('change', function(){
     try{ localStorage.setItem('cardWorkerUrl', workerUrlInput.value.trim()); }catch(e){}
   });
