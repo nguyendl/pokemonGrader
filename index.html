@@ -164,8 +164,17 @@
     <p class="sub" style="margin-bottom:12px;">This app can't identify the card from the photo — type what it is below. It'll try a live price pull, and always gives you direct search links either way.</p>
     <div class="btn-row" style="margin-bottom:6px;">
       <button class="ghost" id="ocrBtn" type="button">🔍 Guess name from photo (beta)</button>
+      <button class="ghost" id="aiIdBtn" type="button">🤖 Ask AI to identify</button>
     </div>
     <p id="ocrStatus" style="font-size:11px;color:var(--text-dim);margin:0 2px 8px;line-height:1.5;display:none;"></p>
+    <p id="aiIdStatus" style="font-size:11px;color:var(--text-dim);margin:0 2px 8px;line-height:1.5;display:none;"></p>
+    <details style="margin-bottom:10px;">
+      <summary style="font-size:11px;color:var(--text-dim);cursor:pointer;">AI identify settings</summary>
+      <div style="margin-top:8px;">
+        <input id="workerUrl" type="text" placeholder="Your Worker URL, e.g. https://xxx.workers.dev" style="width:100%;padding:9px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:12px;">
+        <p style="font-size:10px;color:var(--text-dim);margin:6px 2px 0;">Saved on this device only. Needs your own Cloudflare Worker set up with an ANTHROPIC_API_KEY secret.</p>
+      </div>
+    </details>
     <input id="cardName" type="text" placeholder="Card name (e.g. Charizard)" style="width:100%;padding:11px;margin-bottom:8px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:14px;">
     <div style="display:flex;gap:8px;">
       <input id="cardSet" type="text" placeholder="Set (optional)" style="flex:1;padding:11px;margin-bottom:8px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:14px;">
@@ -512,6 +521,74 @@
 
     applyPositions();
   }
+
+  // ---- AI identify via user's own Cloudflare Worker (optional) ----
+  const workerUrlInput = document.getElementById('workerUrl');
+  const aiIdBtn = document.getElementById('aiIdBtn');
+  const aiIdStatus = document.getElementById('aiIdStatus');
+
+  try{
+    const savedUrl = localStorage.getItem('cardWorkerUrl');
+    if(savedUrl) workerUrlInput.value = savedUrl;
+  }catch(e){}
+  workerUrlInput.addEventListener('change', function(){
+    try{ localStorage.setItem('cardWorkerUrl', workerUrlInput.value.trim()); }catch(e){}
+  });
+
+  aiIdBtn.addEventListener('click', async function(){
+    aiIdStatus.style.display = 'block';
+    const workerUrl = workerUrlInput.value.trim();
+    if(!workerUrl){
+      aiIdStatus.textContent = 'Set your Worker URL under "AI identify settings" below first.';
+      return;
+    }
+    if(!img.src || !stage.classList.contains('active')){
+      aiIdStatus.textContent = 'Load a card photo first.';
+      return;
+    }
+    aiIdBtn.disabled = true;
+    aiIdStatus.textContent = 'Asking AI to identify the card…';
+    try{
+      const iw = img.naturalWidth, ih = img.naturalHeight;
+      const cropLeft = (pos.outerLeft/100) * iw;
+      const cropTop = (pos.outerTop/100) * ih;
+      const cropW = Math.max(1, (pos.outerRight - pos.outerLeft)/100 * iw);
+      const cropH = Math.max(1, (pos.outerBottom - pos.outerTop)/100 * ih);
+      const maxLong = 800; // keep the payload small and cheap
+      const scale = Math.min(1, maxLong / Math.max(cropW, cropH));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(cropW*scale));
+      c.height = Math.max(1, Math.round(cropH*scale));
+      c.getContext('2d').drawImage(img, cropLeft, cropTop, cropW, cropH, 0, 0, c.width, c.height);
+      const dataUrl = c.toDataURL('image/jpeg', 0.85);
+      const base64 = dataUrl.split(',')[1];
+
+      const res = await fetch(workerUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_base64: base64 })
+      });
+      const json = await res.json();
+      if(!res.ok || json.error){
+        aiIdStatus.textContent = 'AI identify failed: ' + (json.error || res.status) + ' — check your Worker is deployed and the API key secret is set.';
+        return;
+      }
+      const r = json.result;
+      if(!r || (!r.pokemon && !r.card_name)){
+        aiIdStatus.textContent = "AI couldn't identify this card confidently. Try a clearer, well-lit photo.";
+        return;
+      }
+      const nameGuess = r.card_name || r.pokemon || '';
+      if(nameGuess) document.getElementById('cardName').value = nameGuess;
+      if(r.set) document.getElementById('cardSet').value = r.set;
+      if(r.number) document.getElementById('cardNumber').value = r.number;
+      aiIdStatus.textContent = `AI thinks: ${nameGuess}${r.set ? ' — ' + r.set : ''}${r.number ? ' #' + r.number : ''} (confidence: ${r.confidence || 'unknown'})`;
+    }catch(e){
+      aiIdStatus.textContent = 'AI identify failed — check your Worker URL and that it\'s deployed correctly.';
+    }finally{
+      aiIdBtn.disabled = false;
+    }
+  });
 
   // ---- OCR: guess card name from the photo (client-side, best-effort) ----
   const ocrBtn = document.getElementById('ocrBtn');
