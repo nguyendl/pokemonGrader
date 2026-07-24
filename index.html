@@ -10,6 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -123,6 +124,13 @@
 
     <div id="cameraOverlay" style="display:none;position:fixed;inset:0;background:#000;z-index:1000;">
       <video id="liveVideo" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;"></video>
+      <div id="cameraGuide" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:72vw;max-width:340px;aspect-ratio:63/88;box-shadow:0 0 0 9999px rgba(0,0,0,0.55);border-radius:14px;pointer-events:none;">
+        <div style="position:absolute;top:-2px;left:-2px;width:34px;height:34px;border-top:4px solid var(--outer);border-left:4px solid var(--outer);border-radius:14px 0 0 0;"></div>
+        <div style="position:absolute;top:-2px;right:-2px;width:34px;height:34px;border-top:4px solid var(--outer);border-right:4px solid var(--outer);border-radius:0 14px 0 0;"></div>
+        <div style="position:absolute;bottom:-2px;left:-2px;width:34px;height:34px;border-bottom:4px solid var(--outer);border-left:4px solid var(--outer);border-radius:0 0 0 14px;"></div>
+        <div style="position:absolute;bottom:-2px;right:-2px;width:34px;height:34px;border-bottom:4px solid var(--outer);border-right:4px solid var(--outer);border-radius:0 0 14px 0;"></div>
+        <div style="position:absolute;top:calc(100% + 14px);left:50%;transform:translateX(-50%);white-space:nowrap;color:#fff;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,0.6);">Fill the frame, keep the card flat</div>
+      </div>
       <div id="cameraError" style="display:none;position:absolute;top:0;left:0;right:0;padding:16px;background:rgba(0,0,0,0.8);color:var(--text);font-size:14px;line-height:1.5;text-align:center;"></div>
       <div style="position:absolute;bottom:0;left:0;right:0;display:flex;gap:12px;padding:18px 16px calc(18px + env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(0,0,0,0.6));">
         <button id="cameraCancelBtn" type="button" style="flex:1;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:9px;padding:14px;font-size:15px;font-weight:600;">Cancel</button>
@@ -154,6 +162,10 @@
     <div class="eyebrow">MARKET PRICE</div>
     <h1 style="font-size:17px;margin-top:2px;">Look Up This Card</h1>
     <p class="sub" style="margin-bottom:12px;">This app can't identify the card from the photo — type what it is below. It'll try a live price pull, and always gives you direct search links either way.</p>
+    <div class="btn-row" style="margin-bottom:6px;">
+      <button class="ghost" id="ocrBtn" type="button">🔍 Guess name from photo (beta)</button>
+    </div>
+    <p id="ocrStatus" style="font-size:11px;color:var(--text-dim);margin:0 2px 8px;line-height:1.5;display:none;"></p>
     <input id="cardName" type="text" placeholder="Card name (e.g. Charizard)" style="width:100%;padding:11px;margin-bottom:8px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:14px;">
     <div style="display:flex;gap:8px;">
       <input id="cardSet" type="text" placeholder="Set (optional)" style="flex:1;padding:11px;margin-bottom:8px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:14px;">
@@ -262,6 +274,8 @@
     liveVideo.srcObject = null;
   }
 
+  let imageCaptureObj = null;
+
   async function openCamera(){
     cameraError.style.display = 'none';
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
@@ -277,6 +291,8 @@
         audio: false
       });
       liveVideo.srcObject = activeStream;
+      const track = activeStream.getVideoTracks()[0];
+      imageCaptureObj = (typeof ImageCapture !== 'undefined' && track) ? new ImageCapture(track) : null;
     }catch(e){
       cameraError.textContent = "Couldn't access the camera (permission denied or unavailable). Use \"Choose Photo\" instead, or check the site's camera permission in Chrome.";
       cameraError.style.display = 'block';
@@ -285,13 +301,26 @@
 
   function closeCamera(){
     stopStream();
+    imageCaptureObj = null;
     overlay.style.display = 'none';
   }
 
   document.getElementById('takePhotoBtn').addEventListener('click', openCamera);
   document.getElementById('cameraCancelBtn').addEventListener('click', closeCamera);
-  document.getElementById('cameraCaptureBtn').addEventListener('click', function(){
-    if(!activeStream || !liveVideo.videoWidth){ return; }
+  document.getElementById('cameraCaptureBtn').addEventListener('click', async function(){
+    if(!activeStream){ return; }
+    // prefer a real full-resolution still photo over a video-frame grab
+    if(imageCaptureObj){
+      try{
+        const blob = await imageCaptureObj.takePhoto();
+        closeCamera();
+        loadImage(blob);
+        return;
+      }catch(e){
+        // fall through to frame-grab fallback below
+      }
+    }
+    if(!liveVideo.videoWidth){ return; }
     const canvas = document.createElement('canvas');
     canvas.width = liveVideo.videoWidth;
     canvas.height = liveVideo.videoHeight;
@@ -483,6 +512,51 @@
 
     applyPositions();
   }
+
+  // ---- OCR: guess card name from the photo (client-side, best-effort) ----
+  const ocrBtn = document.getElementById('ocrBtn');
+  const ocrStatus = document.getElementById('ocrStatus');
+  ocrBtn.addEventListener('click', async function(){
+    ocrStatus.style.display = 'block';
+    if(!img.src || !stage.classList.contains('active')){
+      ocrStatus.textContent = 'Load a card photo first.';
+      return;
+    }
+    ocrBtn.disabled = true;
+    ocrStatus.textContent = 'Reading card text… (first run downloads OCR data, may take a bit)';
+    try{
+      const iw = img.naturalWidth, ih = img.naturalHeight;
+      const cardW = Math.max(1, (pos.outerRight - pos.outerLeft)/100 * iw);
+      const cardH = Math.max(1, (pos.outerBottom - pos.outerTop)/100 * ih);
+      const cropLeft = (pos.outerLeft/100) * iw;
+      const cropTop = (pos.outerTop/100) * ih;
+      const cropW = cardW * 0.72;   // left ~72% of card width — skips the HP number area
+      const cropH = cardH * 0.13;   // top ~13% of card height — the name row
+      const scaleUp = 2.2;          // upscale small text for better OCR accuracy
+      const c = document.createElement('canvas');
+      c.width = Math.max(50, Math.round(cropW * scaleUp));
+      c.height = Math.max(20, Math.round(cropH * scaleUp));
+      const cx = c.getContext('2d');
+      cx.drawImage(img, cropLeft, cropTop, cropW, cropH, 0, 0, c.width, c.height);
+
+      const { data } = await Tesseract.recognize(c, 'eng');
+      let text = (data.text || '')
+        .replace(/[\n\r]+/g, ' ')
+        .replace(/[^A-Za-z0-9 '.\-]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if(text){
+        document.getElementById('cardName').value = text;
+        ocrStatus.textContent = `Guess: "${text}" — double-check before searching, OCR can misread stylized card fonts.`;
+      }else{
+        ocrStatus.textContent = "Couldn't read any text there — try typing the name manually.";
+      }
+    }catch(e){
+      ocrStatus.textContent = 'OCR failed to load or run here — type the card name manually instead.';
+    }finally{
+      ocrBtn.disabled = false;
+    }
+  });
 
   // ---- market price lookup ----
   const lookupBtn = document.getElementById('lookupBtn');
