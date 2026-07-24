@@ -204,21 +204,40 @@
   }
 
   function loadImage(file){
-    const reader = new FileReader();
-    reader.onload = function(e){
-      img.src = e.target.result;
-      img.onload = function(){
-        emptyState.style.display = 'none';
-        stage.classList.add('active');
-        legend.style.display = 'flex';
-        postLoadBtns.style.display = 'flex';
-        resultsBox.classList.add('active');
-        document.getElementById('priceBox').style.display = 'block';
-        resetGuides();
-        autoDetect();
-      };
+    const rawUrl = URL.createObjectURL(file);
+    const probe = new Image();
+    probe.onload = function(){
+      const maxDim = 1400;
+      const w = probe.naturalWidth, h = probe.naturalHeight;
+      const scale = Math.min(1, maxDim / Math.max(w, h));
+      const cw = Math.max(1, Math.round(w * scale));
+      const ch = Math.max(1, Math.round(h * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = cw; canvas.height = ch;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(probe, 0, 0, cw, ch);
+      URL.revokeObjectURL(rawUrl);
+      canvas.toBlob(function(blob){
+        if(!blob){ return; }
+        const resizedUrl = URL.createObjectURL(blob);
+        img.onload = function(){
+          emptyState.style.display = 'none';
+          stage.classList.add('active');
+          legend.style.display = 'flex';
+          postLoadBtns.style.display = 'flex';
+          resultsBox.classList.add('active');
+          document.getElementById('priceBox').style.display = 'block';
+          resetGuides();
+          autoDetect();
+          URL.revokeObjectURL(resizedUrl);
+        };
+        img.src = resizedUrl;
+      }, 'image/jpeg', 0.9);
     };
-    reader.readAsDataURL(file);
+    probe.onerror = function(){
+      URL.revokeObjectURL(rawUrl);
+    };
+    probe.src = rawUrl;
   }
 
   document.querySelector('label[for="cameraInput"]').addEventListener('click', function(e){
