@@ -111,16 +111,25 @@
     </div>
 
     <div class="btn-row">
-      <label class="file-btn" for="cameraInput">📷 Take Photo</label>
+      <button class="file-btn" id="takePhotoBtn" type="button">📷 Take Photo</button>
       <label class="file-btn" for="galleryInput">🖼️ Choose Photo</label>
     </div>
-    <p style="font-size:11px;color:var(--text-dim);margin:8px 2px 0;line-height:1.5;">If "Take Photo" only shows your gallery/files (a known Android 14/15 Chrome issue), snap the photo in your regular Camera app first, then use "Choose Photo" to pick it. Also make sure you opened this file directly in Chrome, not inside an email/Drive/chat app's built-in preview.</p>
+    <p style="font-size:11px;color:var(--text-dim);margin:8px 2px 0;line-height:1.5;" id="cameraFallbackNote">If the camera view fails to open (permission or older browser), use "Choose Photo" after snapping a picture in your regular Camera app.</p>
     <div class="btn-row" id="postLoadBtns" style="display:none;">
       <button class="ghost" id="autoBtn">Auto-detect</button>
       <button class="ghost" id="resetBtn">Reset guides</button>
     </div>
-    <input type="file" id="cameraInput" accept="image/*,android/allowCamera" capture="environment">
     <input type="file" id="galleryInput" accept="image/*">
+
+    <div id="cameraOverlay" style="display:none;position:fixed;inset:0;background:#000;z-index:1000;">
+      <video id="liveVideo" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;"></video>
+      <div id="cameraError" style="display:none;position:absolute;top:0;left:0;right:0;padding:16px;background:rgba(0,0,0,0.8);color:var(--text);font-size:14px;line-height:1.5;text-align:center;"></div>
+      <div style="position:absolute;bottom:0;left:0;right:0;display:flex;gap:12px;padding:18px 16px calc(18px + env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(0,0,0,0.6));">
+        <button id="cameraCancelBtn" type="button" style="flex:1;background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:9px;padding:14px;font-size:15px;font-weight:600;">Cancel</button>
+        <button id="cameraCaptureBtn" type="button" style="flex:2;background:var(--outer);color:#0e2521;border:none;border-radius:9px;padding:14px;font-size:15px;font-weight:700;">📸 Capture</button>
+      </div>
+    </div>
+
   </div>
 
   <div class="results" id="results">
@@ -240,18 +249,64 @@
     probe.src = rawUrl;
   }
 
-  document.querySelector('label[for="cameraInput"]').addEventListener('click', function(e){
-    e.preventDefault();
-    document.getElementById('cameraInput').click();
+  let activeStream = null;
+  const overlay = document.getElementById('cameraOverlay');
+  const liveVideo = document.getElementById('liveVideo');
+  const cameraError = document.getElementById('cameraError');
+
+  function stopStream(){
+    if(activeStream){
+      activeStream.getTracks().forEach(t => t.stop());
+      activeStream = null;
+    }
+    liveVideo.srcObject = null;
+  }
+
+  async function openCamera(){
+    cameraError.style.display = 'none';
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      cameraError.textContent = "Live camera isn't supported in this browser. Use \"Choose Photo\" instead.";
+      cameraError.style.display = 'block';
+      overlay.style.display = 'block';
+      return;
+    }
+    overlay.style.display = 'block';
+    try{
+      activeStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false
+      });
+      liveVideo.srcObject = activeStream;
+    }catch(e){
+      cameraError.textContent = "Couldn't access the camera (permission denied or unavailable). Use \"Choose Photo\" instead, or check the site's camera permission in Chrome.";
+      cameraError.style.display = 'block';
+    }
+  }
+
+  function closeCamera(){
+    stopStream();
+    overlay.style.display = 'none';
+  }
+
+  document.getElementById('takePhotoBtn').addEventListener('click', openCamera);
+  document.getElementById('cameraCancelBtn').addEventListener('click', closeCamera);
+  document.getElementById('cameraCaptureBtn').addEventListener('click', function(){
+    if(!activeStream || !liveVideo.videoWidth){ return; }
+    const canvas = document.createElement('canvas');
+    canvas.width = liveVideo.videoWidth;
+    canvas.height = liveVideo.videoHeight;
+    canvas.getContext('2d').drawImage(liveVideo, 0, 0);
+    closeCamera();
+    canvas.toBlob(function(blob){
+      if(blob) loadImage(blob);
+    }, 'image/jpeg', 0.92);
   });
+
   document.querySelector('label[for="galleryInput"]').addEventListener('click', function(e){
     e.preventDefault();
     document.getElementById('galleryInput').click();
   });
 
-  document.getElementById('cameraInput').addEventListener('change', function(e){
-    if(e.target.files[0]) loadImage(e.target.files[0]);
-  });
   document.getElementById('galleryInput').addEventListener('change', function(e){
     if(e.target.files[0]) loadImage(e.target.files[0]);
   });
