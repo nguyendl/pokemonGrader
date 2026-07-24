@@ -192,6 +192,27 @@
       <input id="cardSet" type="text" placeholder="Set (optional)" style="flex:1;padding:11px;margin-bottom:8px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:14px;">
       <input id="cardNumber" type="text" placeholder="# (optional)" style="width:80px;padding:11px;margin-bottom:8px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:14px;">
     </div>
+    <select id="cardCondition" style="width:100%;padding:11px;margin-bottom:8px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:14px;">
+      <option value="">Condition / grade (optional)</option>
+      <optgroup label="Raw (ungraded)">
+        <option value="Near Mint">Raw — Near Mint</option>
+        <option value="Lightly Played">Raw — Lightly Played</option>
+        <option value="Moderately Played">Raw — Moderately Played</option>
+        <option value="Heavily Played">Raw — Heavily Played</option>
+        <option value="Damaged">Raw — Damaged</option>
+      </optgroup>
+      <optgroup label="Graded">
+        <option value="PSA 10">PSA 10</option>
+        <option value="PSA 9">PSA 9</option>
+        <option value="PSA 8">PSA 8</option>
+        <option value="PSA 7">PSA 7</option>
+        <option value="CGC 10">CGC 10</option>
+        <option value="CGC 9.5">CGC 9.5</option>
+        <option value="BGS 9.5">BGS 9.5</option>
+        <option value="BGS 9">BGS 9</option>
+      </optgroup>
+    </select>
+    <p style="font-size:10px;color:var(--text-dim);margin:-4px 2px 10px;">Filters your search links to that condition/grade — real comps, not a guessed multiplier. The live TCGPlayer/Cardmarket number below is always a raw/ungraded reference regardless of what you pick here.</p>
     <div class="btn-row">
       <button class="primary" id="lookupBtn">Search prices</button>
     </div>
@@ -611,6 +632,7 @@
       if(r.number) document.getElementById('cardNumber').value = r.number;
       aiIdStatus.textContent = `AI thinks: ${nameGuess}${r.set ? ' — ' + r.set : ''}${r.number ? ' #' + r.number : ''} (confidence: ${r.confidence || 'unknown'})`;
       lastAIResult = r;
+      lastPriceCharting = json.pricecharting || null;
       return r;
     }catch(e){
       aiIdStatus.textContent = 'AI identify failed — check your Worker URL and that it\'s deployed correctly.';
@@ -676,6 +698,7 @@
   const linkOutRow2 = document.getElementById('linkOutRow2');
 
   let lastAIResult = null;
+  let lastPriceCharting = null;
   const cardSummary = document.getElementById('cardSummary');
   const cardSummaryBody = document.getElementById('cardSummaryBody');
 
@@ -683,13 +706,15 @@
     const name = document.getElementById('cardName').value.trim();
     const set = document.getElementById('cardSet').value.trim();
     const number = document.getElementById('cardNumber').value.trim();
+    const condition = document.getElementById('cardCondition').value.trim();
     if(!name){ document.getElementById('cardName').focus(); return; }
 
     // always-working search links, regardless of live lookup success
     const q = encodeURIComponent([name, set, number].filter(Boolean).join(' '));
+    const qWithCondition = encodeURIComponent([name, set, number, condition].filter(Boolean).join(' '));
     document.getElementById('tcgplayerBtn').onclick = ()=>window.open(`https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(name)}`, '_blank');
-    document.getElementById('ebayBtn').onclick = ()=>window.open(`https://www.ebay.com/sch/i.html?_nkw=${q}%20pokemon%20card&LH_Sold=1&LH_Complete=1`, '_blank');
-    document.getElementById('pricechartingBtn').onclick = ()=>window.open(`https://www.pricecharting.com/search-products?q=${q}%20pokemon%20card&type=prices`, '_blank');
+    document.getElementById('ebayBtn').onclick = ()=>window.open(`https://www.ebay.com/sch/i.html?_nkw=${qWithCondition}%20pokemon%20card&LH_Sold=1&LH_Complete=1`, '_blank');
+    document.getElementById('pricechartingBtn').onclick = ()=>window.open(`https://www.pricecharting.com/search-products?q=${qWithCondition}%20pokemon%20card&type=prices`, '_blank');
     document.getElementById('cardmarketBtn').onclick = ()=>window.open(`https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=${encodeURIComponent(name)}`, '_blank');
     linkOutRow.style.display = 'flex';
     linkOutRow2.style.display = 'flex';
@@ -747,10 +772,23 @@
     if(number) rows.push(`<div>Number: #${number}</div>`);
     if(r && r.rarity) rows.push(`<div>Rarity: ${r.rarity}</div>`);
     if(r && r.holo && r.holo !== 'unknown') rows.push(`<div>Holo/Foil: ${r.holo}</div>`);
+    if(condition) rows.push(`<div>Condition: ${condition}</div>`);
     if(priceLines.length){
-      rows.push('<div style="margin-top:6px;">' + priceLines.join('<br>') + '</div>');
+      rows.push('<div style="margin-top:6px;">' + priceLines.join('<br>') + (condition ? '<div style="color:var(--text-dim);font-size:11px;margin-top:4px;">(raw/ungraded reference — use the search links for ' + condition + ' comps)</div>' : '') + '</div>');
     }else{
       rows.push('<div style="margin-top:6px;color:var(--text-dim);">No live price found — use the search links below.</div>');
+    }
+    if(lastPriceCharting && lastPriceCharting.prices){
+      const pcRows = Object.entries(lastPriceCharting.prices)
+        .filter(([, v]) => v !== null && v !== undefined)
+        .map(([grade, v]) => {
+          const isSelected = condition && grade.toLowerCase() === condition.toLowerCase();
+          const style = isSelected ? `color:var(--inner);font-weight:700;` : '';
+          return `<div style="${style}">${grade}: $${v.toFixed(2)}${isSelected ? ' ← selected condition' : ''}</div>`;
+        });
+      if(pcRows.length){
+        rows.push(`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line);">PriceCharting (real per-grade prices):<br>${pcRows.join('')}</div>`);
+      }
     }
     cardSummaryBody.innerHTML = rows.join('');
     cardSummary.style.display = 'block';
