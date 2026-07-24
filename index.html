@@ -129,7 +129,7 @@
         <div style="position:absolute;top:-2px;right:-2px;width:34px;height:34px;border-top:4px solid var(--outer);border-right:4px solid var(--outer);border-radius:0 14px 0 0;"></div>
         <div style="position:absolute;bottom:-2px;left:-2px;width:34px;height:34px;border-bottom:4px solid var(--outer);border-left:4px solid var(--outer);border-radius:0 0 0 14px;"></div>
         <div style="position:absolute;bottom:-2px;right:-2px;width:34px;height:34px;border-bottom:4px solid var(--outer);border-right:4px solid var(--outer);border-radius:0 0 14px 0;"></div>
-        <div style="position:absolute;top:calc(100% + 14px);left:50%;transform:translateX(-50%);white-space:nowrap;color:#fff;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,0.6);">Fill the frame, keep the card flat</div>
+        <div style="position:absolute;top:calc(100% + 14px);left:50%;transform:translateX(-50%);white-space:nowrap;color:#fff;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;text-shadow:0 1px 3px rgba(0,0,0,0.6);text-align:center;line-height:1.5;">Fill the frame, keep the card flat<br><span style="font-weight:400;opacity:0.85;">Tap the card to focus • use bright, even light</span></div>
       </div>
       <div id="cameraError" style="display:none;position:absolute;top:0;left:0;right:0;padding:16px;background:rgba(0,0,0,0.8);color:var(--text);font-size:14px;line-height:1.5;text-align:center;"></div>
       <div style="position:absolute;bottom:0;left:0;right:0;display:flex;gap:12px;padding:18px 16px calc(18px + env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(0,0,0,0.6));">
@@ -318,7 +318,6 @@
   }
 
   let imageCaptureObj = null;
-  let maxPhotoSettings = null;
 
   async function openCamera(){
     cameraError.style.display = 'none';
@@ -329,6 +328,9 @@
       return;
     }
     overlay.style.display = 'block';
+    const captureBtn = document.getElementById('cameraCaptureBtn');
+    captureBtn.disabled = true;
+    captureBtn.textContent = 'Focusing…';
     try{
       activeStream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } },
@@ -337,36 +339,35 @@
       liveVideo.srcObject = activeStream;
       const track = activeStream.getVideoTracks()[0];
       imageCaptureObj = (typeof ImageCapture !== 'undefined' && track) ? new ImageCapture(track) : null;
-      maxPhotoSettings = null;
-      if(imageCaptureObj){
-        try{
-          const caps = await imageCaptureObj.getPhotoCapabilities();
-          if(caps && caps.imageWidth && caps.imageHeight){
-            maxPhotoSettings = { imageWidth: caps.imageWidth.max, imageHeight: caps.imageHeight.max };
-          }
-        }catch(e){ maxPhotoSettings = null; } // some devices don't support this - fine, takePhoto still works without it
-      }
+      // give the camera's autofocus/auto-exposure a moment to settle before allowing a capture -
+      // firing takePhoto() the instant the stream opens often catches it mid-focus-hunt
+      await new Promise(resolve => setTimeout(resolve, 700));
+      captureBtn.disabled = false;
+      captureBtn.textContent = '📸 Capture';
     }catch(e){
       cameraError.textContent = "Couldn't access the camera (permission denied or unavailable). Use \"Choose Photo\" instead, or check the site's camera permission in Chrome.";
       cameraError.style.display = 'block';
+      captureBtn.disabled = false;
+      captureBtn.textContent = '📸 Capture';
     }
   }
 
   function closeCamera(){
     stopStream();
     imageCaptureObj = null;
-    maxPhotoSettings = null;
     overlay.style.display = 'none';
   }
 
   document.getElementById('takePhotoBtn').addEventListener('click', openCamera);
   document.getElementById('cameraCancelBtn').addEventListener('click', closeCamera);
   document.getElementById('cameraCaptureBtn').addEventListener('click', async function(){
-    if(!activeStream){ return; }
-    // prefer a real full-resolution still photo over a video-frame grab
+    if(!activeStream) return;
+    // prefer a real still photo from the camera hardware over a video-frame grab.
+    // deliberately NOT forcing the reported max resolution here - on some phones that
+    // triggers a digitally-upscaled (softer) capture instead of the sensor's native, sharper output.
     if(imageCaptureObj){
       try{
-        const blob = await imageCaptureObj.takePhoto(maxPhotoSettings || undefined);
+        const blob = await imageCaptureObj.takePhoto();
         closeCamera();
         loadImage(blob);
         return;
@@ -383,6 +384,18 @@
     canvas.toBlob(function(blob){
       if(blob) loadImage(blob);
     }, 'image/jpeg', 0.95);
+  });
+
+  // best-effort tap-to-focus: not all devices/browsers support this, fails silently if not
+  liveVideo.addEventListener('click', async function(e){
+    const track = activeStream && activeStream.getVideoTracks()[0];
+    if(!track) return;
+    try{
+      const rect = liveVideo.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width;
+      const y = (e.clientY - rect.top) / rect.height;
+      await track.applyConstraints({ advanced: [{ focusMode: 'single-shot', pointsOfInterest: [{ x, y }] }] });
+    }catch(err){ /* unsupported on this device - ignore */ }
   });
 
   document.querySelector('label[for="galleryInput"]').addEventListener('click', function(e){
