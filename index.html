@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Centering Check</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1b1b20">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #1b1b20;
+    --panel: #242429;
+    --panel-2: #2c2c33;
+    --line: #3a3a42;
+    --text: #e9e7e2;
+    --text-dim: #9a98a3;
+    --outer: #4fd1c5;
+    --inner: #f0a83c;
+    --good: #62c977;
+    --bad: #e2604f;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;}
+  body{min-height:100vh;padding:16px 14px 40px;}
+  h1{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px;margin:4px 0 2px;letter-spacing:-0.01em;}
+  .sub{color:var(--text-dim);font-size:13px;margin:0 0 18px;line-height:1.5;}
+  .eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.12em;color:var(--outer);text-transform:uppercase;}
+
+  .card-panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:16px;}
+  .empty-state{border:1.5px dashed var(--line);border-radius:12px;padding:34px 16px;text-align:center;color:var(--text-dim);font-size:14px;}
+  .btn-row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;}
+  button, .file-btn{
+    font-family:'Inter',sans-serif;font-weight:600;font-size:14px;
+    background:var(--panel-2);color:var(--text);border:1px solid var(--line);
+    border-radius:9px;padding:11px 16px;cursor:pointer;flex:1;min-width:120px;text-align:center;
+  }
+  button.primary{background:var(--outer);color:#0e2521;border-color:var(--outer);}
+  button.ghost{background:transparent;}
+  button:active,.file-btn:active{transform:scale(0.98);}
+  input[type=file]{display:none;}
+
+  .stage{position:relative;width:100%;max-width:520px;margin:0 auto;touch-action:none;user-select:none;display:none;}
+  .stage.active{display:block;}
+  .stage img{width:100%;display:block;border-radius:6px;pointer-events:none;}
+
+  .guide{position:absolute;background:transparent;}
+  .guide.h{left:0;right:0;height:0;border-top:2px solid;}
+  .guide.v{top:0;bottom:0;width:0;border-left:2px solid;}
+  .guide.outer{border-color:var(--outer);}
+  .guide.inner{border-color:var(--inner);border-style:dashed;}
+  .handle{
+    position:absolute;width:26px;height:26px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;
+    color:#0e1512;transform:translate(-50%,-50%);cursor:grab;
+  }
+  .handle.outer{background:var(--outer);}
+  .handle.inner{background:var(--inner);}
+  .handle.h{left:8px;}
+  .handle.v{top:8px;}
+
+  .legend{display:flex;gap:16px;justify-content:center;margin-top:12px;font-size:12px;color:var(--text-dim);}
+  .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
+  .dot.outer{background:var(--outer);} .dot.inner{background:var(--inner);}
+
+  .results{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;display:none;}
+  .results.active{display:block;}
+  .axis-row{margin-bottom:16px;}
+  .axis-label{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-dim);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;}
+  .bar-wrap{background:var(--panel-2);border-radius:8px;height:34px;position:relative;overflow:hidden;}
+  .bar-fill{position:absolute;top:0;bottom:0;left:0;background:linear-gradient(90deg,var(--outer),var(--inner));}
+  .bar-mid{position:absolute;top:0;bottom:0;left:50%;width:1px;background:rgba(255,255,255,0.3);}
+  .bar-nums{display:flex;justify-content:space-between;margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;}
+  .grade-box{margin-top:18px;padding:14px;border-radius:10px;background:var(--panel-2);text-align:center;}
+  .grade-title{font-family:'Space Grotesk',sans-serif;font-size:17px;font-weight:700;}
+  .grade-sub{font-size:12px;color:var(--text-dim);margin-top:4px;}
+  .disclaimer{font-size:11px;color:var(--text-dim);margin-top:14px;line-height:1.5;}
+</style>
+</head>
+<body>
+
+  <div class="eyebrow">CARD LAB</div>
+  <h1>Centering Check</h1>
+  <p class="sub">Photograph a card straight-on with even lighting. Drag the teal lines to the outer card edge, and the amber lines to the inner border/art frame. Auto-detect gives you a starting guess — fine-tune by eye for accuracy.</p>
+
+  <div class="card-panel">
+    <div class="empty-state" id="emptyState">No card loaded yet.<br>Take a photo or choose one from your gallery.</div>
+
+    <div class="stage" id="stage">
+      <img id="cardImg" alt="card">
+      <div class="guide h outer" id="g-outerTop"><div class="handle h outer" id="h-outerTop">OUT</div></div>
+      <div class="guide h outer" id="g-outerBottom"><div class="handle h outer" id="h-outerBottom">OUT</div></div>
+      <div class="guide v outer" id="g-outerLeft"><div class="handle v outer" id="h-outerLeft">OUT</div></div>
+      <div class="guide v outer" id="g-outerRight"><div class="handle v outer" id="h-outerRight">OUT</div></div>
+      <div class="guide h inner" id="g-innerTop"><div class="handle h inner" id="h-innerTop">IN</div></div>
+      <div class="guide h inner" id="g-innerBottom"><div class="handle h inner" id="h-innerBottom">IN</div></div>
+      <div class="guide v inner" id="g-innerLeft"><div class="handle v inner" id="h-innerLeft">IN</div></div>
+      <div class="guide v inner" id="g-innerRight"><div class="handle v inner" id="h-innerRight">IN</div></div>
+    </div>
+
+    <div class="legend" id="legend" style="display:none;">
+      <span><span class="dot outer"></span>Outer edge</span>
+      <span><span class="dot inner"></span>Inner border</span>
+    </div>
+
+    <div class="btn-row">
+      <label class="file-btn" for="cameraInput">📷 Take Photo</label>
+      <label class="file-btn" for="galleryInput">🖼️ Choose Photo</label>
+    </div>
+    <p style="font-size:11px;color:var(--text-dim);margin:8px 2px 0;line-height:1.5;">If "Take Photo" only shows your gallery/files (a known Android 14/15 Chrome issue), snap the photo in your regular Camera app first, then use "Choose Photo" to pick it. Also make sure you opened this file directly in Chrome, not inside an email/Drive/chat app's built-in preview.</p>
+    <div class="btn-row" id="postLoadBtns" style="display:none;">
+      <button class="ghost" id="autoBtn">Auto-detect</button>
+      <button class="ghost" id="resetBtn">Reset guides</button>
+    </div>
+    <input type="file" id="cameraInput" accept="image/*,android/allowCamera" capture="environment">
+    <input type="file" id="galleryInput" accept="image/*">
+  </div>
+
+  <div class="results" id="results">
+    <div class="axis-row">
+      <div class="axis-label">Left / Right</div>
+      <div class="bar-wrap"><div class="bar-fill" id="lrFill"></div><div class="bar-mid"></div></div>
+      <div class="bar-nums"><span id="lrLeftNum">50%</span><span id="lrRightNum">50%</span></div>
+    </div>
+    <div class="axis-row">
+      <div class="axis-label">Top / Bottom</div>
+      <div class="bar-wrap"><div class="bar-fill" id="tbFill"></div><div class="bar-mid"></div></div>
+      <div class="bar-nums"><span id="tbTopNum">50%</span><span id="tbBottomNum">50%</span></div>
+    </div>
+    <div class="grade-box">
+      <div class="grade-title" id="gradeTitle">—</div>
+      <div class="grade-sub" id="gradeSub">Load a card and align the guides to see an estimate.</div>
+    </div>
+    <div class="disclaimer">This is a rough centering estimate based on your guide placement, not an official PSA/BGS/CGC grade. Actual grading also weighs corners, edges, and surface.</div>
+  </div>
+
+  <div class="card-panel" id="priceBox" style="display:none;margin-top:16px;">
+    <div class="eyebrow">MARKET PRICE</div>
+    <h1 style="font-size:17px;margin-top:2px;">Look Up This Card</h1>
+    <p class="sub" style="margin-bottom:12px;">This app can't identify the card from the photo — type what it is below. It'll try a live price pull, and always gives you direct search links either way.</p>
+    <input id="cardName" type="text" placeholder="Card name (e.g. Charizard)" style="width:100%;padding:11px;margin-bottom:8px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:14px;">
+    <div style="display:flex;gap:8px;">
+      <input id="cardSet" type="text" placeholder="Set (optional)" style="flex:1;padding:11px;margin-bottom:8px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:14px;">
+      <input id="cardNumber" type="text" placeholder="# (optional)" style="width:80px;padding:11px;margin-bottom:8px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);font-size:14px;">
+    </div>
+    <div class="btn-row">
+      <button class="primary" id="lookupBtn">Search prices</button>
+    </div>
+
+    <div id="liveResult" style="display:none;margin-top:14px;padding:12px;border-radius:10px;background:var(--panel-2);">
+      <div class="axis-label" style="margin-bottom:8px;">LIVE LOOKUP</div>
+      <div id="liveResultBody" style="font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;"></div>
+    </div>
+    <div id="liveFailNote" style="display:none;font-size:12px;color:var(--text-dim);margin-top:10px;">Live lookup didn't return data from this browser — use the links below instead.</div>
+
+    <div class="btn-row" id="linkOutRow" style="display:none;margin-top:12px;">
+      <button class="ghost" id="tcgplayerBtn">TCGPlayer</button>
+      <button class="ghost" id="ebayBtn">eBay Sold</button>
+    </div>
+    <div class="btn-row" id="linkOutRow2" style="display:none;">
+      <button class="ghost" id="pricechartingBtn">PriceCharting</button>
+      <button class="ghost" id="cardmarketBtn">Cardmarket</button>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const stage = document.getElementById('stage');
+  const img = document.getElementById('cardImg');
+  const emptyState = document.getElementById('emptyState');
+  const legend = document.getElementById('legend');
+  const postLoadBtns = document.getElementById('postLoadBtns');
+  const resultsBox = document.getElementById('results');
+
+  // positions as % of stage dimensions
+  let pos = {
+    outerTop:2, outerBottom:98, outerLeft:2, outerRight:98,
+    innerTop:9, innerBottom:91, innerLeft:9, innerRight:91
+  };
+
+  const guideKeys = Object.keys(pos);
+
+  function applyPositions(){
+    guideKeys.forEach(k=>{
+      const g = document.getElementById('g-'+k);
+      const h = document.getElementById('h-'+k);
+      const isTopBottom = k.includes('Top') || k.includes('Bottom');
+      if(isTopBottom){
+        g.style.top = pos[k]+'%';
+        h.style.top = pos[k]+'%';
+      } else {
+        g.style.left = pos[k]+'%';
+        h.style.left = pos[k]+'%';
+      }
+    });
+    computeResults();
+  }
+
+  function loadImage(file){
+    const reader = new FileReader();
+    reader.onload = function(e){
+      img.src = e.target.result;
+      img.onload = function(){
+        emptyState.style.display = 'none';
+        stage.classList.add('active');
+        legend.style.display = 'flex';
+        postLoadBtns.style.display = 'flex';
+        resultsBox.classList.add('active');
+        document.getElementById('priceBox').style.display = 'block';
+        resetGuides();
+        autoDetect();
+      };
+    };
+    reader.readAsDataURL(file);
+  }
+
+  document.querySelector('label[for="cameraInput"]').addEventListener('click', function(e){
+    e.preventDefault();
+    document.getElementById('cameraInput').click();
+  });
+  document.querySelector('label[for="galleryInput"]').addEventListener('click', function(e){
+    e.preventDefault();
+    document.getElementById('galleryInput').click();
+  });
+
+  document.getElementById('cameraInput').addEventListener('change', function(e){
+    if(e.target.files[0]) loadImage(e.target.files[0]);
+  });
+  document.getElementById('galleryInput').addEventListener('change', function(e){
+    if(e.target.files[0]) loadImage(e.target.files[0]);
+  });
+
+  function resetGuides(){
+    pos = {
+      outerTop:2, outerBottom:98, outerLeft:2, outerRight:98,
+      innerTop:9, innerBottom:91, innerLeft:9, innerRight:91
+    };
+    applyPositions();
+  }
+  document.getElementById('resetBtn').addEventListener('click', resetGuides);
+  document.getElementById('autoBtn').addEventListener('click', autoDetect);
+
+  // ---- dragging ----
+  let activeHandle = null;
+  guideKeys.forEach(k=>{
+    const h = document.getElementById('h-'+k);
+    h.addEventListener('pointerdown', function(e){
+      activeHandle = k;
+      h.setPointerCapture(e.pointerId);
+    });
+  });
+  document.addEventListener('pointermove', function(e){
+    if(!activeHandle) return;
+    const rect = stage.getBoundingClientRect();
+    const isTopBottom = activeHandle.includes('Top') || activeHandle.includes('Bottom');
+    let pct;
+    if(isTopBottom){
+      pct = ((e.clientY - rect.top) / rect.height) * 100;
+    } else {
+      pct = ((e.clientX - rect.left) / rect.width) * 100;
+    }
+    pct = Math.max(0, Math.min(100, pct));
+    pos[activeHandle] = pct;
+    applyPositions();
+  });
+  document.addEventListener('pointerup', function(){ activeHandle = null; });
+
+  // ---- results ----
+  function computeResults(){
+    const leftMargin = pos.innerLeft - pos.outerLeft;
+    const rightMargin = pos.outerRight - pos.innerRight;
+    const topMargin = pos.innerTop - pos.outerTop;
+    const bottomMargin = pos.outerBottom - pos.innerBottom;
+
+    const lrTotal = leftMargin + rightMargin;
+    const tbTotal = topMargin + bottomMargin;
+    const lrLeftPct = lrTotal > 0 ? (leftMargin/lrTotal*100) : 50;
+    const tbTopPct = tbTotal > 0 ? (topMargin/tbTotal*100) : 50;
+
+    document.getElementById('lrLeftNum').textContent = lrLeftPct.toFixed(0)+'%';
+    document.getElementById('lrRightNum').textContent = (100-lrLeftPct).toFixed(0)+'%';
+    document.getElementById('tbTopNum').textContent = tbTopPct.toFixed(0)+'%';
+    document.getElementById('tbBottomNum').textContent = (100-tbTopPct).toFixed(0)+'%';
+
+    document.getElementById('lrFill').style.width = lrLeftPct+'%';
+    document.getElementById('tbFill').style.width = tbTopPct+'%';
+
+    const worstOff = Math.max(Math.abs(lrLeftPct-50), Math.abs(tbTopPct-50));
+    let title, sub, color;
+    if(worstOff <= 5){ title='Excellent — ~50/50 to 55/45'; color='var(--good)'; }
+    else if(worstOff <= 10){ title='Good — up to ~60/40'; color='var(--good)'; }
+    else if(worstOff <= 15){ title='Fair — up to ~65/35'; color='var(--inner)'; }
+    else { title='Off-center — worse than 65/35'; color='var(--bad)'; }
+    sub = 'Worst-axis deviation from perfect center: '+worstOff.toFixed(1)+' points';
+    document.getElementById('gradeTitle').textContent = title;
+    document.getElementById('gradeTitle').style.color = color;
+    document.getElementById('gradeSub').textContent = sub;
+  }
+
+  // ---- auto-detect via pixel gradients ----
+  function autoDetect(){
+    const canvas = document.createElement('canvas');
+    const w = 300; // downscale for speed
+    const h = Math.round(300 * (img.naturalHeight/img.naturalWidth));
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    let data;
+    try{
+      data = ctx.getImageData(0,0,w,h).data;
+    }catch(e){
+      applyPositions();
+      return; // e.g. tainted canvas from cross-origin - fall back to defaults
+    }
+
+    function lum(x,y){
+      const i = (y*w+x)*4;
+      return 0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2];
+    }
+
+    function gradientAlongRow(y, xStart, xEnd){
+      const arr = [];
+      const step = xStart < xEnd ? 1 : -1;
+      for(let x=xStart; x!==xEnd; x+=step){
+        arr.push({x, g: Math.abs(lum(Math.min(x+2,w-1),y) - lum(Math.max(x-2,0),y))});
+      }
+      return arr;
+    }
+    function gradientAlongCol(x, yStart, yEnd){
+      const arr = [];
+      const step = yStart < yEnd ? 1 : -1;
+      for(let y=yStart; y!==yEnd; y+=step){
+        arr.push({y, g: Math.abs(lum(x,Math.min(y+2,h-1)) - lum(x,Math.max(y-2,0)))});
+      }
+      return arr;
+    }
+    function strongestIn(arr, key){
+      let best = arr[0];
+      for(const p of arr) if(p.g > best.g) best = p;
+      return best[key];
+    }
+
+    const midY = Math.round(h/2);
+    const midX = Math.round(w/2);
+
+    // outer edges: search from each side inward across ~first 12% of dimension
+    const searchXOuter = Math.round(w*0.12);
+    const searchYOuter = Math.round(h*0.12);
+    const outerLeftPx = strongestIn(gradientAlongRow(midY, 0, searchXOuter), 'x');
+    const outerRightPx = strongestIn(gradientAlongRow(midY, w-1, w-1-searchXOuter), 'x');
+    const outerTopPx = strongestIn(gradientAlongCol(midX, 0, searchYOuter), 'y');
+    const outerBottomPx = strongestIn(gradientAlongCol(midX, h-1, h-1-searchYOuter), 'y');
+
+    // inner border: search inward from outer edge across next ~4-14% of dimension
+    const innerSearchStartX = Math.round(w*0.04);
+    const innerSearchEndX = Math.round(w*0.16);
+    const innerSearchStartY = Math.round(h*0.04);
+    const innerSearchEndY = Math.round(h*0.16);
+    const innerLeftPx = strongestIn(gradientAlongRow(midY, outerLeftPx+innerSearchStartX, outerLeftPx+innerSearchEndX), 'x');
+    const innerRightPx = strongestIn(gradientAlongRow(midY, outerRightPx-innerSearchStartX, outerRightPx-innerSearchEndX), 'x');
+    const innerTopPx = strongestIn(gradientAlongCol(midX, outerTopPx+innerSearchStartY, outerTopPx+innerSearchEndY), 'y');
+    const innerBottomPx = strongestIn(gradientAlongCol(midX, outerBottomPx-innerSearchStartY, outerBottomPx-innerSearchEndY), 'y');
+
+    pos.outerLeft = outerLeftPx/w*100;
+    pos.outerRight = outerRightPx/w*100;
+    pos.outerTop = outerTopPx/h*100;
+    pos.outerBottom = outerBottomPx/h*100;
+    pos.innerLeft = innerLeftPx/w*100;
+    pos.innerRight = innerRightPx/w*100;
+    pos.innerTop = innerTopPx/h*100;
+    pos.innerBottom = innerBottomPx/h*100;
+
+    applyPositions();
+  }
+
+  // ---- market price lookup ----
+  const lookupBtn = document.getElementById('lookupBtn');
+  const liveResult = document.getElementById('liveResult');
+  const liveResultBody = document.getElementById('liveResultBody');
+  const liveFailNote = document.getElementById('liveFailNote');
+  const linkOutRow = document.getElementById('linkOutRow');
+  const linkOutRow2 = document.getElementById('linkOutRow2');
+
+  lookupBtn.addEventListener('click', async function(){
+    const name = document.getElementById('cardName').value.trim();
+    const set = document.getElementById('cardSet').value.trim();
+    const number = document.getElementById('cardNumber').value.trim();
+    if(!name){ document.getElementById('cardName').focus(); return; }
+
+    // always-working search links, regardless of live lookup success
+    const q = encodeURIComponent([name, set, number].filter(Boolean).join(' '));
+    document.getElementById('tcgplayerBtn').onclick = ()=>window.open(`https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(name)}`, '_blank');
+    document.getElementById('ebayBtn').onclick = ()=>window.open(`https://www.ebay.com/sch/i.html?_nkw=${q}%20pokemon%20card&LH_Sold=1&LH_Complete=1`, '_blank');
+    document.getElementById('pricechartingBtn').onclick = ()=>window.open(`https://www.pricecharting.com/search-products?q=${q}%20pokemon%20card&type=prices`, '_blank');
+    document.getElementById('cardmarketBtn').onclick = ()=>window.open(`https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=${encodeURIComponent(name)}`, '_blank');
+    linkOutRow.style.display = 'flex';
+    linkOutRow2.style.display = 'flex';
+
+    liveResult.style.display = 'none';
+    liveFailNote.style.display = 'none';
+    lookupBtn.textContent = 'Searching…';
+
+    try{
+      let query = `name:"${name}"`;
+      if(set) query += ` set.name:"${set}"`;
+      const url = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(query)}&pageSize=10`;
+      const res = await fetch(url);
+      if(!res.ok) throw new Error('bad status');
+      const json = await res.json();
+      let cards = json.data || [];
+      if(number){
+        const match = cards.find(c => (c.number||'').toLowerCase() === number.toLowerCase());
+        if(match) cards = [match];
+      }
+      if(cards.length === 0) throw new Error('no match');
+      const card = cards[0];
+
+      let lines = [`${card.name} — ${card.set ? card.set.name : ''} #${card.number||''}`];
+      if(card.tcgplayer && card.tcgplayer.prices){
+        for(const variant in card.tcgplayer.prices){
+          const p = card.tcgplayer.prices[variant];
+          if(p && p.market){
+            lines.push(`TCGPlayer ${variant}: $${p.market.toFixed(2)} (range $${(p.low||0).toFixed(2)}–$${(p.high||0).toFixed(2)})`);
+          }
+        }
+      }
+      if(card.cardmarket && card.cardmarket.prices && card.cardmarket.prices.averageSellPrice){
+        lines.push(`Cardmarket avg: €${card.cardmarket.prices.averageSellPrice.toFixed(2)}`);
+      }
+      if(lines.length === 1){
+        throw new Error('no price data');
+      }
+      liveResultBody.innerHTML = lines.map(l=>`<div>${l}</div>`).join('');
+      liveResult.style.display = 'block';
+    }catch(e){
+      liveFailNote.style.display = 'block';
+    }finally{
+      lookupBtn.textContent = 'Search prices';
+    }
+  });
+})();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
